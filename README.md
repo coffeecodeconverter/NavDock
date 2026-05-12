@@ -49,6 +49,7 @@ currentScales[index] += (target - currentScales[index]) * animationSmoothness;
 
 
 find more: <br>
-https://turnerworks.uk/index.html <br>
+https://turnerworks.uk <br>
 https://github.com/turnerworks <br>
 <Br>
+
