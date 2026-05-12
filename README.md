@@ -45,7 +45,7 @@ Instead of setting the scale instantly, we update it by a fraction of the distan
 
 ```javascript
 currentScales[index] += (target - currentScales[index]) * animationSmoothness;
-
+```
 
 
 find more: <br>
