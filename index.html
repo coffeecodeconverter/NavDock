@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fluid macOS Dock</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --text-color: #f8fafc;
+            --base-size: 50px;
+            --max-scale: 1.0; 
+            --range: 150;
+            --smoothness: 0.15;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            color: var(--text-color);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* --- CONTROL PANEL --- */
+        .controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            width: 260px;
+            z-index: 5000;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .controls.collapsed {
+            transform: translateX(calc(100% - 45px));
+        }
+
+        .controls-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            cursor: pointer;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .controls h2 {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            opacity: 0.8;
+        }
+
+        .toggle-icon {
+            font-size: 10px;
+            transition: transform 0.3s;
+        }
+
+        .controls.collapsed .toggle-icon {
+            transform: rotate(180deg);
+        }
+
+        .controls-body {
+            padding: 20px;
+        }
+
+        .controls.collapsed .controls-body {
+            display: none;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+            accent-color: #38bdf8;
+            cursor: pointer;
+        }
+
+        .pos-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .pos-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            padding: 6px;
+            border-radius: 6px;
+            font-size: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .pos-btn.active {
+            background: #38bdf8;
+            border-color: #38bdf8;
+            color: #0f172a;
+            font-weight: bold;
+        }
+
+        /* Content Sections */
+        .page-container {
+            text-align: center;
+            max-width: 600px;
+            padding: 40px;
+            transition: transform 0.5s ease;
+        }
+
+        .page {
+            display: none;
+            animation: slideUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h1 {
+            font-size: clamp(2.5rem, 8vw, 4rem);
+            margin-bottom: 1rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+
+        p {
+            font-size: 1.1rem;
+            opacity: 0.6;
+            line-height: 1.6;
+        }
+
+        /* --- THE DOCK --- */
+        .dock-container {
+            position: fixed;
+            display: flex;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            transition: bottom 0.3s, top 0.3s, left 0.3s, right 0.3s, transform 0.3s;
+        }
+
+        /* Position Variants */
+        .dock-bottom { bottom: 20px; left: 50%; transform: translateX(-50%); flex-direction: row; align-items: flex-end; height: 74px; width: auto; }
+        .dock-top { top: 20px; left: 50%; transform: translateX(-50%); flex-direction: row; align-items: flex-start; height: 74px; width: auto; }
+        .dock-left { left: 20px; top: 50%; transform: translateY(-50%); flex-direction: column; align-items: flex-start; width: 74px; height: auto; }
+        .dock-right { right: 20px; top: 50%; transform: translateY(-50%); flex-direction: column; align-items: flex-end; width: 74px; height: auto; }
+
+        .dock-item {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: var(--base-size);
+            height: var(--base-size);
+            cursor: pointer;
+            margin: 2px;
+        }
+
+        .dock-bottom .dock-item, .dock-top .dock-item { flex-direction: column; justify-content: flex-end; height: 100%; width: var(--base-size); }
+        .dock-left .dock-item, .dock-right .dock-item { flex-direction: row; justify-content: flex-start; width: 100%; height: var(--base-size); }
+
+        .icon-box {
+            width: var(--base-size);
+            height: var(--base-size);
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 14px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            position: relative;
+            transition: background 0.2s, opacity 0.2s, color 0.2s;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            user-select: none;
+            z-index: 1;
+            opacity: 0.85;
+        }
+
+        /* Transform origins based on position to keep expansion toward the center of screen */
+        .dock-bottom .icon-box { transform-origin: bottom center; }
+        .dock-top .icon-box { transform-origin: top center; }
+        .dock-left .icon-box { transform-origin: center left; }
+        .dock-right .icon-box { transform-origin: center right; }
+
+        /* Subtle scale down on click that doesn't break the JS positioning */
+        .dock-item:active .icon-box {
+            filter: brightness(0.8);
+            transition: transform 0.1s;
+            /* We handle the actual scale multiplier in JS for consistency */
+        }
+
+        .icon-label {
+            position: absolute;
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            opacity: 0;
+            transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+            color: inherit;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        .dock-bottom .icon-label { bottom: 2px; left: 50%; transform: translateX(-50%) translateY(5px); }
+        .dock-top .icon-label { top: 2px; left: 50%; transform: translateX(-50%) translateY(-5px); }
+        .dock-left .icon-label { left: 2px; top: 50%; transform: translateY(-50%) translateX(-5px); }
+        .dock-right .icon-label { right: 2px; top: 50%; transform: translateY(-50%) translateX(5px); }
+
+        .dock-item:hover .icon-label {
+            opacity: 0.6;
+        }
+        .dock-bottom .dock-item:hover .icon-label { transform: translateX(-50%) translateY(0); }
+        .dock-top .dock-item:hover .icon-label { transform: translateX(-50%) translateY(0); }
+        .dock-left .dock-item:hover .icon-label { transform: translateY(-50%) translateX(0); }
+        .dock-right .dock-item:hover .icon-label { transform: translateY(-50%) translateX(0); }
+
+        .dock-item:hover .icon-box {
+            background: rgba(255, 255, 255, 1); 
+            opacity: 1 !important; 
+            z-index: 2;
+            color: #1e293b;
+        }
+
+        .dot {
+            width: 4px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            position: absolute;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .dock-bottom .dot { bottom: -8px; left: 50%; transform: translateX(-50%); }
+        .dock-top .dot { top: -8px; left: 50%; transform: translateX(-50%); }
+        .dock-left .dot { left: -8px; top: 50%; transform: translateY(-50%); }
+        .dock-right .dot { right: -8px; top: 50%; transform: translateY(-50%); }
+
+        .dock-item.active .dot {
+            opacity: 1;
+        }
+        
+        /* --- SUB MENU --- */
+        .sub-menu {
+            position: absolute;
+            bottom: calc(100% + 15px);
+            left: 50%;
+            transform: translateX(-50%) scale(0.9) translateY(10px);
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 14px;
+            width: 170px;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            z-index: 3000;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .dock-top .sub-menu { bottom: auto; top: calc(100% + 15px); transform: translateX(-50%) scale(0.9) translateY(-10px); }
+        .dock-left .sub-menu { bottom: auto; left: calc(100% + 20px); top: 50%; transform: translateY(-50%) scale(0.9) translateX(-10px); }
+        .dock-right .sub-menu { bottom: auto; right: calc(100% + 20px); left: auto; top: 50%; transform: translateY(-50%) scale(0.9) translateX(10px); }
+
+        .sub-menu.visible {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateX(-50%) scale(1) translateY(0);
+        }
+        .dock-top .sub-menu.visible { transform: translateX(-50%) scale(1) translateY(0); }
+        .dock-left .sub-menu.visible { transform: translateY(-50%) scale(1) translateX(0); }
+        .dock-right .sub-menu.visible { transform: translateY(-50%) scale(1) translateX(0); }
+
+        .sub-menu-header {
+            padding: 14px 16px 10px 16px;
+            font-size: 10px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: #38bdf8;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(15, 23, 42, 0.7);
+            flex-shrink: 0;
+            user-select: none;
+        }
+
+        .sub-menu-list {
+            padding: 6px;
+            max-height: 200px;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        .sub-menu-item {
+            padding: 10px 12px;
+            color: white;
+            font-size: 13px;
+            border-radius: 8px;
+            transition: all 0.2s;
+            text-align: left;
+            cursor: pointer;
+            margin-bottom: 2px;
+        }
+
+        .sub-menu-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            padding-left: 16px;
+        }
+
+        .sub-menu-list::-webkit-scrollbar { width: 4px; }
+        .sub-menu-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <aside class="controls" id="controlPanel">
+        <div class="controls-header" onclick="toggleControls()">
+            <h2>Dock Settings</h2>
+            <span class="toggle-icon">▶</span>
+        </div>
+        <div class="controls-body">
+            <div class="control-group">
+                <label>Position</label>
+                <div class="pos-grid">
+                    <button class="pos-btn" onclick="setDockPos('top')">Top</button>
+                    <button class="pos-btn" onclick="setDockPos('left')">Left</button>
+                    <button class="pos-btn" onclick="setDockPos('right')">Right</button>
+                    <button class="pos-btn active" onclick="setDockPos('bottom')">Bottom</button>
+                </div>
+            </div>
+            <div class="control-group">
+                <label>Smoothness <span id="val-smooth">0.15</span></label>
+                <input type="range" id="input-smooth" min="0.05" max="0.5" step="0.01" value="0.15">
+            </div>
+            <div class="control-group">
+                <label>Magnification <span id="val-scale">1.0</span></label>
+                <input type="range" id="input-scale" min="0.5" max="2.0" step="0.1" value="1.0">
+            </div>
+            <div class="control-group">
+                <label>Hover Range <span id="val-range">150px</span></label>
+                <input type="range" id="input-range" min="50" max="300" step="10" value="150">
+            </div>
+            <div class="control-group">
+                <label>Icon Size <span id="val-size">50px</span></label>
+                <input type="range" id="input-size" min="30" max="80" step="2" value="50">
+            </div>
+        </div>
+    </aside>
+
+    <div class="page-container" id="pageContainer">
+        <div id="home" class="page active"><h1>Home</h1><p>Welcome to the main entry point.</p></div>
+        <div id="dashboard" class="page"><h1>Dashboard</h1><p>Monitor your progress and activities.</p></div>
+        <div id="articles" class="page"><h1>Articles</h1><p>Deep dives and thoughts on design.</p></div>
+        <div id="portfolio" class="page"><h1>Portfolio</h1><p>A curated showcase of projects.</p></div>
+        <div id="work-web" class="page"><h1>Web Development</h1><p>Full-stack applications and interactive UI.</p></div>
+        <div id="work-design" class="page"><h1>Product Design</h1><p>User research and design systems.</p></div>
+        <div id="work-mobile" class="page"><h1>Mobile Apps</h1><p>Cross-platform mobile experiences.</p></div>
+        <div id="work-branding" class="page"><h1>Branding</h1><p>Identity systems and logos.</p></div>
+        <div id="lab" class="page"><h1>The Lab</h1><p>Experimental features and playground concepts.</p></div>
+        <div id="about" class="page"><h1>About</h1><p>Learn more about the mission.</p></div>
+        <div id="newsletter" class="page"><h1>Newsletter</h1><p>Stay updated with the latest releases.</p></div>
+        <div id="contact" class="page"><h1>Contact</h1><p>Get in touch for collaborations.</p></div>
+    </div>
+
+    <nav class="dock-container dock-bottom" id="dock">
+        <div class="dock-item active" onclick="navigateTo('home', this)">
+            <div class="icon-box">🏠</div><span class="icon-label">Home</span><div class="dot"></div>
+        </div>
+        <div class="dock-item" onclick="navigateTo('dashboard', this)">
+            <div class="icon-box">📊</div><span class="icon-label">Stats</span><div class="dot"></div>
+        </div>
+        <div class="dock-item" onclick="navigateTo('articles', this)">
+            <div class="icon-box">📝</div><span class="icon-label">Blog</span><div class="dot"></div>
+        </div>
+        
+        <!-- WORK TAB WITH SUB-MENU -->
+        <div class="dock-item" id="workTab" onmousedown="handleWorkClick(event, this)">
+            <div class="icon-box">💼</div><span class="icon-label">Work</span><div class="dot"></div>
+            
+            <div class="sub-menu" id="workSubMenu">
+                <div class="sub-menu-header">💼 Work</div>
+                <div class="sub-menu-list">
+                    <div class="sub-menu-item" onclick="navigateTo('portfolio', this, true)">All Projects</div>
+                    <div class="sub-menu-item" onclick="navigateTo('work-web', this, true)">Web Dev</div>
+                    <div class="sub-menu-item" onclick="navigateTo('work-design', this, true)">UI/UX Design</div>
+                    <div class="sub-menu-item" onclick="navigateTo('work-mobile', this, true)">Mobile Apps</div>
+                    <div class="sub-menu-item" onclick="navigateTo('work-branding', this, true)">Branding</div>
+                    <div class="sub-menu-item" onclick="navigateTo('work-web', this, true)">Cloud Apps</div>
+                    <div class="sub-menu-item" onclick="navigateTo('work-design', this, true)">Prototypes</div>
+                    <div class="sub-menu-item" onclick="navigateTo('work-mobile', this, true)">Consultancy</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="dock-item" onclick="navigateTo('lab', this)">
+            <div class="icon-box">🧪</div><span class="icon-label">Lab</span><div class="dot"></div>
+        </div>
+        <div class="dock-item" onclick="navigateTo('about', this)">
+            <div class="icon-box">👤</div><span class="icon-label">User</span><div class="dot"></div>
+        </div>
+        <div class="dock-item" onclick="navigateTo('newsletter', this)">
+            <div class="icon-box">✉️</div><span class="icon-label">Mail</span><div class="dot"></div>
+        </div>
+        <div class="dock-item" onclick="navigateTo('contact', this)">
+            <div class="icon-box">📞</div><span class="icon-label">Call</span><div class="dot"></div>
+        </div>
+    </nav>
+
+    <script>
+        const dock = document.getElementById('dock');
+        const items = document.querySelectorAll('.dock-item');
+        const controlPanel = document.getElementById('controlPanel');
+        const pageContainer = document.getElementById('pageContainer');
+        const workSubMenu = document.getElementById('workSubMenu');
+        
+        let baseSize = 50;
+        let maxScaleValue = 1.0; 
+        let hoverRange = 150;
+        let animationSmoothness = 0.15;
+        let dockPos = 'bottom';
+
+        function toggleControls() {
+            controlPanel.classList.toggle('collapsed');
+        }
+
+        // track which item is being clicked to apply a visual scale-down
+        let activeItemIndex = -1;
+
+        items.forEach((item, idx) => {
+            item.addEventListener('mousedown', () => activeItemIndex = idx);
+            window.addEventListener('mouseup', () => activeItemIndex = -1);
+        });
+
+        function handleWorkClick(event, element) {
+            if (event.target.closest('.sub-menu-item')) return;
+            event.stopPropagation();
+            workSubMenu.classList.toggle('visible');
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#workTab')) {
+                workSubMenu.classList.remove('visible');
+            }
+        });
+
+        function setDockPos(pos) {
+            dockPos = pos;
+            dock.className = `dock-container dock-${pos}`;
+            document.querySelectorAll('.pos-btn').forEach(btn => btn.classList.toggle('active', btn.innerText.toLowerCase() === pos));
+            workSubMenu.classList.remove('visible');
+        }
+
+        const inputs = {
+            smooth: document.getElementById('input-smooth'),
+            scale: document.getElementById('input-scale'),
+            range: document.getElementById('input-range'),
+            size: document.getElementById('input-size')
+        };
+        
+        const updateParams = () => {
+            animationSmoothness = parseFloat(inputs.smooth.value);
+            maxScaleValue = parseFloat(inputs.scale.value);
+            hoverRange = parseInt(inputs.range.value);
+            baseSize = parseInt(inputs.size.value);
+            document.documentElement.style.setProperty('--base-size', baseSize + 'px');
+            
+            document.getElementById('val-smooth').textContent = animationSmoothness;
+            document.getElementById('val-scale').textContent = maxScaleValue.toFixed(1);
+            document.getElementById('val-range').textContent = hoverRange + 'px';
+            document.getElementById('val-size').textContent = baseSize + 'px';
+        };
+
+        Object.values(inputs).forEach(input => input.addEventListener('input', updateParams));
+
+        let mouseX = -1000;
+        let mouseY = -1000;
+        let currentScales = Array.from({length: items.length}, () => 0);
+
+        document.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+
+        function applyIconStyle(item, s, isPressed) {
+            const iconBox = item.querySelector('.icon-box');
+            
+            // Base scale from magnification
+            let finalScale = 1 + s * maxScaleValue;
+            
+            // Apply a slight scale down if the mouse is pressed on this specific icon
+            // This is the "click" effect. We use 0.9 of the current calculated scale.
+            if (isPressed) finalScale *= 0.88;
+
+            const translateVal = s * 22;
+
+            // Handle parent item container size (to push neighbors)
+            if (dockPos === 'bottom' || dockPos === 'top') {
+                item.style.width = `${baseSize * (1 + s * 0.95)}px`;
+                item.style.height = '100%';
+            } else {
+                item.style.height = `${baseSize * (1 + s * 0.95)}px`;
+                item.style.width = '100%';
+            }
+
+            // Construct transform based on dock position
+            let transform = `scale(${finalScale})`;
+            
+            // Only translate away from the edge, keep centered on the perpendicular axis
+            if (dockPos === 'bottom') transform += ` translateY(-${translateVal}px)`;
+            else if (dockPos === 'top') transform += ` translateY(${translateVal}px)`;
+            else if (dockPos === 'left') transform += ` translateX(${translateVal}px)`;
+            else if (dockPos === 'right') transform += ` translateX(-${translateVal}px)`;
+            
+            iconBox.style.transform = transform;
+            iconBox.style.opacity = 0.85 + (s * 0.15);
+            iconBox.style.fontSize = `${baseSize * 0.48}px`;
+        }
+
+        function updateDock() {
+            const dockRect = dock.getBoundingClientRect();
+            const buffer = 100;
+            const isNear = mouseX > dockRect.left - buffer && mouseX < dockRect.right + buffer && mouseY > dockRect.top - buffer && mouseY < dockRect.bottom + buffer;
+
+            items.forEach((item, index) => {
+                let target = 0;
+                if (isNear) {
+                    const rect = item.getBoundingClientRect();
+                    const cx = rect.left + rect.width / 2;
+                    const cy = rect.top + rect.height / 2;
+                    const d = Math.hypot(mouseX - cx, mouseY - cy);
+                    
+                    if (d < hoverRange) {
+                        // Smooth cosine curve for magnification
+                        target = Math.cos((d / hoverRange) * (Math.PI / 2));
+                    }
+                }
+                
+                // Interpolate scale for smoothness
+                currentScales[index] += (target - currentScales[index]) * animationSmoothness;
+                
+                // Apply visual styles including click state
+                applyIconStyle(item, currentScales[index], activeItemIndex === index);
+            });
+            
+            requestAnimationFrame(updateDock);
+        }
+
+        function navigateTo(pageId, element, isSubItem = false) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            const targetPage = document.getElementById(pageId);
+            if (targetPage) targetPage.classList.add('active');
+            
+            items.forEach(i => i.classList.remove('active'));
+            
+            if (isSubItem) {
+                document.getElementById('workTab').classList.add('active');
+                workSubMenu.classList.remove('visible');
+            } else {
+                element.classList.add('active');
+            }
+        }
+
+        requestAnimationFrame(updateDock);
+        updateParams();
+    </script>
+</body>
+</html>
