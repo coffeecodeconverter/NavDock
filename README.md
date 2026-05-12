@@ -41,12 +41,14 @@ This ensures that the icon directly under the cursor is at $100\%$ magnification
 ## 3. Smooth Interpolation (The Feel)
 If we mapped the mouse position directly to the icon size, the movement would feel jittery. To solve this, we use **Linear Interpolation (Lerp)**.
 
+Instead of setting the scale instantly, we update it by a fraction of the distance between the *current* scale and the *target* scale:
+
+```javascript
+currentScales[index] += (target - currentScales[index]) * animationSmoothness;
+
+
 
 find more: <br>
 https://turnerworks.uk/index.html <br>
 https://github.com/turnerworks <br>
 <Br>
-Instead of setting the scale instantly, we update it by a fraction of the distance between the *current* scale and the *target* scale:
-
-```javascript
-currentScales[index] += (target - currentScales[index]) * animationSmoothness;
