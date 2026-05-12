@@ -6,8 +6,9 @@ There is something undeniably satisfying about the macOS Dock. The way icons swe
 In this article, we’ll break down how to recreate this fluid, interactive navigation system using only standard web technologies.
 
 Try the Live Project Here: <br>
-**https://turnerworks.uk/portfolio/gridflex/index.html**
-<br>
+**https://turnerworks.uk/portfolio/macdocknavsystem/index.html**
+
+
 <img height="600" alt="image" src="https://github.com/user-attachments/assets/85ec4186-2e5c-421e-abc1-b9770cd20867" />
 
 
